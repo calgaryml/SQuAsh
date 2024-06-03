@@ -1,6 +1,6 @@
 ### Development environment steps:
 
-Development is done using docker containers; while in the "xmc-kernels" directory, run the following docker commands:
+Development is done using docker containers; run the following docker commands in the top-level directory:
 
 docker build -t custom_rocm .
 
