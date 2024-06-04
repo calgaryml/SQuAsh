@@ -1,6 +1,13 @@
-if [ ! -d "./.build" ];
+if [ ! -d "./bin" ];
 then
-  mkdir ./.build
+  mkdir ./bin
 fi
 
-cmake "$@" -B ./.build/ -S . && cmake --build ./.build/ -j8
+if (($# != 1)); then
+    echo "Usage: $0 <build_type>"
+    exit 1
+fi
+
+build_dir="bin/$1"
+cmake -S . -B "$build_dir" -DCMAKE_BUILD_TYPE="$1"
+cmake --build "$build_dir"

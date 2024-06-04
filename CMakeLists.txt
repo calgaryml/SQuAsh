@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(XMC-Kernels
+project(SQuAsh
         LANGUAGES CXX HIP
         VERSION 0.0.1
 )
