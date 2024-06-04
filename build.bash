@@ -1,8 +1,3 @@
-if [ ! -d "./bin" ];
-then
-  mkdir ./bin
-fi
-
 if (($# != 1)); then
     echo "Usage: $0 <build_type>"
     exit 1
