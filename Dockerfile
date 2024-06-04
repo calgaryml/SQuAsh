@@ -2,7 +2,7 @@
 FROM rocm/dev-ubuntu-22.04:6.1
 
 # Set the working directory
-WORKDIR /xmc-kernels/
+WORKDIR /SQuAsh/
 
 RUN apt-get update && \
     apt-get install -y \
