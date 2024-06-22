@@ -1,8 +1,6 @@
-if (($# != 1)); then
-    echo "Usage: $0 <build_type>"
-    exit 1
-fi
-
-build_dir="bin/$1"
-cmake -S . -B "$build_dir" -DCMAKE_BUILD_TYPE="$1"
-cmake --build "$build_dir"
+export ROCM_PATH="/opt/rocm/"
+export CXX="$ROCM_PATH/bin/hipcc"
+cmake -S . -B build
+export CTEST_OUTPUT_ON_FAILURE=1
+cmake --build build --clean-first
+cmake --build build --target test

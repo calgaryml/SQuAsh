@@ -1,1 +1,6 @@
-bin
+build
+Testing
+Makefile
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
