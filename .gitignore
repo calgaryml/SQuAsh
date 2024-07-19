@@ -4,3 +4,7 @@ Makefile
 CMakeFiles
 CMakeCache.txt
 cmake_install.cmake
+*.egg-info
+dist
+build
+__pycache__
