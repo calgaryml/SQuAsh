@@ -83,7 +83,12 @@ struct ForwardKernelHelpers
   static __device__ void grid2d(ForwardKernelData &data, std::integral_constant<EGrid2dMode, Mode> mode, std::int32_t unitOffset = 0)
   {
     std::int32_t batchIndex, unitIndex;
-    if constexpr (Mode == EGrid2dMode::BATCH_UNIT)
+    if constexpr (Mode == EGrid2dMode::BATCH_UNIT_TG)
+    {
+      batchIndex = blockIdx.y * blockDim.x + threadIdx.x;
+      unitIndex = blockIdx.x * blockDim.y + threadIdx.y;
+    }
+    else if (Mode == EGrid2dMode::BATCH_UNIT)
     {
       batchIndex = blockIdx.x * blockDim.x + threadIdx.x;
       unitIndex = blockIdx.y * blockDim.y + threadIdx.y;
@@ -102,6 +107,12 @@ namespace kernels
   {
     ForwardKernelHelpers<Float, Int, Transpose>::grid2d(data, make_const_t<EGrid2dMode::BATCH_UNIT>{}, unit_offset);
   }
+
+  template <typename Float, typename Int, bool Transpose>
+  __global__ void ffi_bu_tg_f(ForwardData<Float, Int, Transpose> data)
+  {
+    ForwardKernelHelpers<Float, Int, Transpose>::grid2d(data, make_const_t<EGrid2dMode::BATCH_UNIT_TG>{});
+  }
 }
 
 struct sDim3d
@@ -115,6 +126,7 @@ namespace ForwardPass
 {
   template <typename Float, typename Int, bool Transpose>
   void call(std::bool_constant<Transpose> transpose [[maybe_unused]],
+            ForwardImplementations strategy,
             MatrixData<Float> features,
             MatrixData<Int> lookup,
             MatrixData<Float> weights,
@@ -129,8 +141,6 @@ namespace ForwardPass
     hipDeviceProp_t properties;
     HIP_ASSERT(hipGetDeviceProperties(&properties, device));
     // calculate how many threads (in multiples of warps) we get per multiprocessor if we distribute evenly
-    std::int32_t threads_per_sm = round_up(div_up(int32_t(data.outputSize_), (std::int32_t)properties.multiProcessorCount), 32);
-    // cap the number of threads at 512, so we don't run out of registers.
 
     dim3 block_final = dim3{32, 16};
     if (data.batchSize_ <= 4 || (9 <= data.batchSize_ && data.batchSize_ <= 12))
@@ -145,26 +155,50 @@ namespace ForwardPass
     {
       block_final = {16, 24};
     }
-    sDim3d grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
-
-    sDim3d grid_dim = {
-        div_up(grid.x, block_final.x),
-        div_up(grid.y, block_final.y),
-        div_up(grid.z, block_final.z)};
+    sDim3d grid;
+    sDim3d grid_dim;
+    if (transpose)
+    {
+      grid = {(std::uint32_t)data.outputSize_, (std::uint32_t)data.batchSize_};
+      grid_dim = {
+          div_up(grid.x, block_final.y),
+          div_up(grid.y, block_final.x),
+          div_up(grid.z, block_final.z)};
+    }
+    else
+    {
+      grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
+      grid_dim = {
+          div_up(grid.x, block_final.x),
+          div_up(grid.y, block_final.y),
+          div_up(grid.z, block_final.z)};
+    }
     if (grid_dim.y > 65'535)
     {
       grid_dim.y = 65'535;
     }
     dim3 grid_final = dim3{grid_dim.x, grid_dim.y, grid_dim.z};
     // hipStream_t Stream = nullptr; //Check streams later
-    for (std::int32_t unit_pos = 0; unit_pos < data.outputSize_; unit_pos += grid_final.y * block_final.y)
+    if (strategy == ForwardImplementations::GPU_BatchUnit_TG_Fan)
     {
+      kernels::ffi_bu_tg_f<<<grid_final, block_final>>>(data);
+    }
+    else if (strategy == ForwardImplementations::GPU_BatchUnit_Fan)
+    {
+      for (std::int32_t unit_pos = 0; unit_pos < data.outputSize_; unit_pos += grid_final.y * block_final.y)
       {
-        kernels::ffi_bu_f<<<grid_final, block_final>>>(data, unit_pos);
-        HIP_ASSERT(hipDeviceSynchronize());
+        {
+          kernels::ffi_bu_f<<<grid_final, block_final>>>(data, unit_pos);
+          HIP_ASSERT(hipDeviceSynchronize());
+        }
       }
     }
   }
+}
+
+namespace BackwardPass
+{
+  // TODO: add backward pass
 }
 
 template <class Float, bool Transpose>
@@ -177,6 +211,13 @@ struct SparseForwardOp
       const Tensor &locations,
       const OptTensor &bias_opt)
   {
+    ForwardImplementations strategy;
+    if (Transpose)
+      strategy = ForwardImplementations::GPU_BatchUnit_TG_Fan;
+    else
+    {
+      strategy = ForwardImplementations::GPU_BatchUnit_Fan;
+    }
     TORCH_CHECK_VALUE(weights.size(0) == locations.size(0), "mismatch in number of outputs")
     TORCH_CHECK_VALUE(weights.size(1) == locations.size(1), "mismatch in fan-in")
     if (bias_opt.has_value())
@@ -191,6 +232,7 @@ struct SparseForwardOp
 
     ForwardPass::call(
         std::bool_constant<Transpose>{},
+        strategy,
         to_matrix<Float>(features),
         to_matrix<Int>(locations),
         to_matrix<Float>(weights),
@@ -223,5 +265,6 @@ struct SparseForwardOp
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-  // m.def("ffi_backward", &forward, "Performs a fixed fan-in batched matrix multiplication.");
+  m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+  // m.def("ffi_backward", &SparseBackwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
 }

@@ -24,7 +24,7 @@ weights = torch.randn(output_size, fan_in, dtype=torch.float32, requires_grad=Tr
 locations = torch.randint(0, feature_size, (output_size, fan_in), dtype=torch.int32, requires_grad=False,
                             device=device)
 
-transpose = False
+transpose = True
 
 # do the multiplication jointly
 all_results = FFI.ffi_mul(features, weights, locations, None, transpose)

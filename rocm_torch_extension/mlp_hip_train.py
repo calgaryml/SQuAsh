@@ -17,14 +17,14 @@ class FFIMulFunction(torch.autograd.Function):
                 transpose: bool = True) -> torch.Tensor:
         ctx.transpose = transpose
 
-        # if transpose:
-        #     features_tp = torch.transpose(features, 0, 1).contiguous()
-        #     ctx.save_for_backward(features_tp, weights, locations)
-        #     result = mlp_hip.ffi_forward_tp(features_tp, weights, locations, bias)
-        # else:
-        features = features.contiguous()
-        ctx.save_for_backward(features, weights, locations)
-        result = mlp_hip.ffi_forward(features, weights, locations, bias)
+        if transpose:
+            features_tp = torch.transpose(features, 0, 1).contiguous()
+            ctx.save_for_backward(features_tp, weights, locations)
+            result = mlp_hip.ffi_forward_tp(features_tp, weights, locations, bias)
+        else:
+            features = features.contiguous()
+            ctx.save_for_backward(features, weights, locations)
+            result = mlp_hip.ffi_forward(features, weights, locations, bias)
 
 
         if bias is not None:
