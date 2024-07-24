@@ -46,16 +46,11 @@ class FFIMulFunction(torch.autograd.Function):
         else:
             bias_gradient = None
 
-        # if transpose:
-        #     input_gradient, weight_gradient, = mlp_hip.ffi_backward_tp(
-        #         features, weights, locations, grad_output
-        #     )
-        #     input_gradient = torch.transpose(input_gradient, 0, 1)
-        # else:
-        input_gradient, weight_gradient, = mlp_hip.ffi_backward(
+        input_gradient, weight_gradient, = mlp_hip.ffi_backward_tp(
             features, weights, locations, grad_output
         )
-
+        input_gradient = torch.transpose(input_gradient, 0, 1)
+        
         return input_gradient, weight_gradient, None, bias_gradient, None
 
 
