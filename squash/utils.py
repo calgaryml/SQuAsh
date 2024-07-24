@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn 
 
 @torch.no_grad()
 def generate_unstructured_sparse_tensor(t: torch.Tensor, sparsity: float) -> torch.Tensor:

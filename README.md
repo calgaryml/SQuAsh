@@ -12,5 +12,5 @@ Check if amd GPU is renderD128 and renderD129 if you have 2 GPUs (or more), in m
 
 Usage steps: 
 1. Run `git submodule init` and then `git submodule update`.
-2. Run `python3 setup.py install` in directory `rocm_torch_extension`, this will install the python module in your dist-packages folder.
+2. Run `python3 setup.py install` in directory `rocm_torch_extension`, this will install the python module in your dist-packages folder. Use `python3 setup.py develop` if you wish to edit the python package without reinstallation.
 3. Run `python3 trainer.py` in directory `rocm_torch_extension` to run the tests and see how to use the python module.
