@@ -198,7 +198,82 @@ namespace ForwardPass
 
 namespace BackwardPass
 {
-  // TODO: add backward pass
+  namespace FtrOP
+  {
+    template <typename Float, typename Int, bool Transpose>
+    void call(ForwardImplementations strategy,
+              MatrixData<Float> features,
+              MatrixData<Int> lookup,
+              MatrixData<Float> weights,
+              std::optional<VectorData<Float>> biases,
+              MatrixData<Float> output)
+    {
+      using OutT = ForwardData<Float, Int, Transpose>;
+      auto data = OutT::from_matrix(features, lookup, weights, biases, output);
+
+      int device;
+      HIP_ASSERT(hipGetDevice(&device));
+      hipDeviceProp_t properties;
+      HIP_ASSERT(hipGetDeviceProperties(&properties, device));
+      // calculate how many threads (in multiples of warps) we get per multiprocessor if we distribute evenly
+
+      dim3 block_final = dim3{32, 16};
+      if (data.batchSize_ <= 4 || (9 <= data.batchSize_ && data.batchSize_ <= 12))
+      {
+        block_final = {4, 96};
+      }
+      else if (data.batchSize_ <= 8 || (17 <= data.batchSize_ && data.batchSize_ <= 24))
+      {
+        block_final = {8, 48};
+      }
+      else if (data.batchSize_ <= 16)
+      {
+        block_final = {16, 24};
+      }
+      sDim3d grid;
+      sDim3d grid_dim;
+      if (transpose)
+      {
+        grid = {(std::uint32_t)data.outputSize_, (std::uint32_t)data.batchSize_};
+        grid_dim = {
+            div_up(grid.x, block_final.y),
+            div_up(grid.y, block_final.x),
+            div_up(grid.z, block_final.z)};
+      }
+      else
+      {
+        grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
+        grid_dim = {
+            div_up(grid.x, block_final.x),
+            div_up(grid.y, block_final.y),
+            div_up(grid.z, block_final.z)};
+      }
+      if (grid_dim.y > 65'535)
+      {
+        grid_dim.y = 65'535;
+      }
+      dim3 grid_final = dim3{grid_dim.x, grid_dim.y, grid_dim.z};
+      // hipStream_t Stream = nullptr; //Check streams later
+      if (strategy == ForwardImplementations::GPU_BatchUnit_TG_Fan)
+      {
+        kernels::ffi_bu_tg_f<<<grid_final, block_final>>>(data);
+      }
+      else if (strategy == ForwardImplementations::GPU_BatchUnit_Fan)
+      {
+        for (std::int32_t unit_pos = 0; unit_pos < data.outputSize_; unit_pos += grid_final.y * block_final.y)
+        {
+          {
+            kernels::ffi_bu_f<<<grid_final, block_final>>>(data, unit_pos);
+            HIP_ASSERT(hipDeviceSynchronize());
+          }
+        }
+      }
+    }
+  }
+  namespace WgtOP
+  {
+
+  }
 }
 
 template <class Float, bool Transpose>
@@ -262,9 +337,68 @@ struct SparseForwardOp
   }
 };
 
+template <class Float>
+struct SparseBackwardOp
+{
+  template <class Int>
+  static std::vector<Tensor> run(
+      const Tensor &features,
+      const Tensor &weights,
+      const Tensor &locations,
+      const Tensor &output_gradient)
+  {
+    BackwardFtrImplementations strategy_ftr = BackwardFtrImplementations::GPU_BatchUnit_Fan;
+    BackwardWgtImplementations strategy_wgt = BackwardWgtImplementations::GPU_FanUnit_Batch;
+
+    std::int64_t batch_size = features.size(1);
+
+    TORCH_CHECK_VALUE(weights.size(0) == locations.size(0), "mismatch in number of outputs")
+    TORCH_CHECK_VALUE(weights.size(1) == locations.size(1), "mismatch in fan-in")
+    TORCH_CHECK_VALUE(output_gradient.size(0) == batch_size, "mismatch in batch size ", output_gradient.size(0), " vs ", batch_size)
+    TORCH_CHECK_VALUE(output_gradient.size(1) == weights.size(0), "mismatch in number of outputs");
+
+    Tensor input_gradient = allocate_output(features, features.size(0), features.size(1));
+    Tensor weight_gradient = allocate_output(weights, weights.size(0), weights.size(1));
+
+    BackwardPass::FtrOP::call(
+        strategy,
+        to_matrix<Int>(locations),
+        to_matrix<Float>(weights),
+        to_matrix<Float>(output_gradient),
+        to_matrix<Float>(input_gradient));
+    // BackwardPass::WgtOP::call(
+    //     strategy,
+    //     to_matrix<Float>(input_gradient),
+    //     to_matrix<Int>(locations),
+    //     to_matrix<Float>(output_gradient),
+    //     to_matrix<Float>(weights));
+    return {input_gradient, weight_gradient};
+  }
+
+  static std::vector<Tensor> dispatch(
+      const Tensor &input,
+      const Tensor &weights,
+      const Tensor &locations,
+      const Tensor &output_gradient)
+  {
+    if (locations.dtype() == torch::kInt32)
+    {
+      return run<std::int32_t>(input, weights, locations, output_gradient);
+    }
+    else if (locations.dtype() == torch::kInt16)
+    {
+      return run<std::uint16_t>(input, weights, locations, output_gradient);
+    }
+    else
+    {
+      TORCH_CHECK_TYPE(false, "locations must be int32 or int16")
+    }
+  }
+};
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
   m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-  // m.def("ffi_backward", &SparseBackwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+  m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
 }
