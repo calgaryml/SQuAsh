@@ -8,6 +8,7 @@ from torch.autograd import gradcheck
 
 
 from mlp_hip_train import FFI
+from squash.ffi_linear import FFILinear
 from squash.utils import generate_ffi_structure, assert_ffi
 
 def main():
@@ -32,7 +33,7 @@ def main():
     # do the multiplication jointly
     all_results = FFI.ffi_mul(features, weights, locations, None, transpose)
     assert all_results.shape == (batch_size, seq_len, output_size)
-    print(all_results)
+    # print(all_results)
 
     # and compare result with slices
     one_result = FFI.ffi_mul(features[:, 5, :], weights, locations, None, transpose)
@@ -49,18 +50,18 @@ def main():
     assert (int16_result == int32_result).all()
 
     # compare dense to sparse
-    _sparsity = fan_in / (feature_size*seq_len)
-    dense = nn.Linear(in_features=seq_len*feature_size, out_features=seq_len*output_size, device=device)
-    sparse = nn.Linear(in_features=seq_len*feature_size, out_features=seq_len*output_size, device=device)
-    sparse.weight = dense.weight.detach().clone()
-    sparse.bias = dense.bias.detach().clone()
+    _sparsity = 1- (fan_in / feature_size)
+    dense = nn.Linear(in_features=feature_size, out_features=output_size, device=device)
+    sparse = nn.Linear(in_features=feature_size, out_features=output_size, device=device)
+    sparse.weight.data = dense.weight.detach().clone()
+    sparse.bias.data = dense.bias.detach().clone()
     sparse_ffi_weight = generate_ffi_structure(t = sparse.weight, sparsity=_sparsity)
-    sparse.weight = sparse_ffi_weight
-    assert (sparse.weight[0]!=0).sum() == fan_in
+    sparse.weight.data = sparse_ffi_weight
     assert_ffi(sparse.weight)
-    dense_out = dense(features)
-    sparse_out = sparse(features)
-    assert torch.allclose(dense_out, sparse_out)
+    ffi_linear = FFILinear(sparse, transpose=True, vectorize=True)
+    dense_out = sparse(features)
+    sparse_out = ffi_linear(features)
+    assert torch.allclose(dense_out, sparse_out, atol=1e-7)
     
     ## backwards
     # batch_size = 36
