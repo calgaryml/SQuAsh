@@ -2,82 +2,8 @@
 #include "mdspan/include/mdspan/mdspan.hpp"
 #include "generic_vector.hip"
 #include <type_traits>
+#include "data_helpers.hpp"
 using torch::Tensor;
-using OptTensor = torch::optional<Tensor>;
-/*!
- * \brief Type used to represent vector data passed from/to kernels.
- * \details A (non-owning) `std::experimental::mdspan` for one-dimensional data.
- * \sa \ref design-mdspan
- */
-template <typename T>
-using VectorData = Kokkos::mdspan<T, Kokkos::dextents<std::int64_t, 1>, Kokkos::layout_right>;
-
-/*!
- * \brief Type used to represent matrix data passed from/to kernels.
- * \details A (non-owning) `std::experimental::mdspan` for two-dimensional data.
- * \sa \ref design-mdspan
- */
-template <typename T>
-using MatrixData = Kokkos::mdspan<T, Kokkos::dextents<std::int64_t, 2>, Kokkos::layout_right>;
-
-template <class T>
-auto data_ptr(const Tensor &data)
-{
-    return data.data_ptr<T>();
-}
-
-template <>
-auto data_ptr<std::uint16_t>(const Tensor &data)
-{
-    return reinterpret_cast<std::uint16_t *>(data.data_ptr<std::int16_t>());
-}
-
-template <class T>
-MatrixData<T> to_matrix(const Tensor &data)
-{
-    TORCH_CHECK(data.is_contiguous())
-    TORCH_CHECK_EQ(data.dim(), 2);
-    return Kokkos::mdspan(data_ptr<T>(data), data.size(0), data.size(1));
-}
-
-template <class T>
-auto to_matrix(const OptTensor &data) -> decltype(std::make_optional(to_matrix<T>(data.value())))
-{
-    if (data.has_value())
-    {
-        return std::make_optional(to_matrix<T>(data.value()));
-    }
-    else
-    {
-        return std::nullopt;
-    }
-}
-
-template <class T>
-VectorData<T> to_vector(const Tensor &data)
-{
-    TORCH_CHECK(data.is_contiguous())
-    TORCH_CHECK_EQ(data.dim(), 1);
-    return Kokkos::mdspan(data.data_ptr<T>(), data.size(0));
-}
-
-template <class T>
-auto to_vector(const OptTensor &data) -> decltype(std::make_optional(to_vector<T>(data.value())))
-{
-    if (data.has_value())
-    {
-        return std::make_optional(to_vector<T>(data.value()));
-    }
-    else
-    {
-        return std::nullopt;
-    }
-}
-
-torch::Tensor allocate_output(const torch::Tensor &ref, std::int64_t dim0, std::int64_t dim1)
-{
-    return at::empty({dim0, dim1}, at::device(ref.device()).dtype(ref.dtype()));
-}
 
 template <typename Float, typename Int, bool Transpose>
 class ForwardData

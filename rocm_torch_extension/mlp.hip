@@ -3,6 +3,7 @@
 #include <hip/hip_runtime.h>
 #include <type_traits>
 #include "forward_data.hpp"
+#include "backward_data.hpp"
 #include "enums.hpp"
 #include "generic_vector.hip"
 
@@ -59,8 +60,8 @@ struct ForwardKernelHelpers
 
   static __device__ accumulate_t loopFan(ForwardKernelData &data, std::int32_t batchIndex, std::int32_t unitIndex)
   {
-    assert(0 <= batchIndex <= data.batchSize_);
-    assert(0 <= unitIndex <= data.outputSize_);
+    assert(0 <= batchIndex < data.batchSize_);
+    assert(0 <= unitIndex < data.outputSize_);
 
     accumulate_t value = data.bias_at(unitIndex);
 
@@ -100,6 +101,89 @@ struct ForwardKernelHelpers
   };
 };
 
+template <typename Float, typename Int>
+struct BackwardKernelHelpers
+{
+  using BackwardKernelData = BackwardData<Float, Int>;
+  static __device__ void loop_fan_vector(BackwardKernelData &data,
+                                         std::int32_t batch_index,
+                                         std::int32_t unit_index)
+  {
+    assert(0 <= batch_index < data.batchSize_);
+    assert(0 <= unit_index < data.outputSize_);
+
+    Float out = data.output_at(batch_index, unit_index);
+    if (out == Float{0})
+    {
+      return;
+    }
+
+    for (std::int32_t weight_index = 0; weight_index < data.lookupSize_; weight_index += 4)
+    {
+      auto source4 = data.lookup_vec_at(unit_index, weight_index);
+      auto weight4 = data.weight_vec_at(unit_index, weight_index);
+      XCK_PRAGMA_UNROLL
+      for (int k = 0; k < 4; ++k)
+      {
+        Float increment = weight4[k] * out;
+        atomicAdd(&data.feature_at(batch_index, source4[k]), increment);
+      }
+    }
+  }
+  static __device__ void grid_batch_unit(BackwardKernelData &data)
+  {
+    std::int32_t unit_index_offset = blockIdx.y * blockDim.y + threadIdx.y;
+    std::int32_t unit_block_size = blockDim.y * gridDim.y;
+    std::int32_t batch_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (batch_index >= data.batchSize_)
+    {
+      return;
+    }
+
+    for (std::int32_t unit_index = unit_index_offset; unit_index < data.outputSize_; unit_index += unit_block_size)
+    {
+      loop_fan_vector(data, batch_index, unit_index);
+    }
+  }
+
+  static __device__ void loop_batch_scalar(BackwardKernelData &data,
+                                           std::int32_t unit_index,
+                                           std::int32_t weight_index)
+  {
+
+    assert(0 <= weight_index < data.lookupSize_);
+    assert(0 <= unit_index < data.outputSize_);
+
+    Int source = data.lookup_at(unit_index, weight_index);
+    Float weight = data.weight_at(unit_index, weight_index);
+    for (std::int32_t batch_index = 0; batch_index < data.batchSize_; ++batch_index)
+    {
+      Float out = data.output_at(batch_index, unit_index);
+      Float increment = weight * out;
+      atomicAdd(&data.feature_at(batch_index, source), increment);
+    }
+  }
+
+  static __device__ void grid_fan_unit(BackwardKernelData &data)
+  {
+    std::int32_t weight_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (weight_index >= data.lookupSize_)
+    {
+      return;
+    }
+
+    std::int32_t unit_index_offset = blockIdx.y * blockDim.y + threadIdx.y;
+    std::int32_t unit_block_size = blockDim.y * gridDim.y;
+
+    for (std::int32_t unit_index = unit_index_offset; unit_index < data.outputSize_; unit_index += unit_block_size)
+    {
+      loop_batch_scalar(data, unit_index, weight_index);
+    }
+  }
+};
+
 namespace kernels
 {
   template <typename Float, typename Int, bool Transpose>
@@ -113,6 +197,21 @@ namespace kernels
   {
     ForwardKernelHelpers<Float, Int, Transpose>::grid2d(data, make_const_t<EGrid2dMode::BATCH_UNIT_TG>{});
   }
+
+  template <typename Float, typename Int>
+  __global__ void __launch_bounds__(1024)
+      ffi_bf_bu_f_vector(BackwardData<Float, Int> data)
+  {
+    BackwardKernelHelpers<Float, Int>::grid_batch_unit(data);
+  }
+
+  template <typename Float, typename Int>
+  __global__ void __launch_bounds__(1024)
+      ffi_bf_fu_b_scalar(BackwardData<Float, Int> data)
+  {
+    BackwardKernelHelpers<Float, Int>::grid_fan_unit(data);
+  }
+
 }
 
 struct sDim3d
@@ -135,12 +234,6 @@ namespace ForwardPass
   {
     using OutT = ForwardData<Float, Int, Transpose>;
     auto data = OutT::from_matrix(features, lookup, weights, biases, output);
-
-    int device;
-    HIP_ASSERT(hipGetDevice(&device));
-    hipDeviceProp_t properties;
-    HIP_ASSERT(hipGetDeviceProperties(&properties, device));
-    // calculate how many threads (in multiples of warps) we get per multiprocessor if we distribute evenly
 
     dim3 block_final = dim3{32, 16};
     if (data.batchSize_ <= 4 || (9 <= data.batchSize_ && data.batchSize_ <= 12))
@@ -182,6 +275,7 @@ namespace ForwardPass
     if (strategy == ForwardImplementations::GPU_BatchUnit_TG_Fan)
     {
       kernels::ffi_bu_tg_f<<<grid_final, block_final>>>(data);
+      HIP_ASSERT(hipDeviceSynchronize());
     }
     else if (strategy == ForwardImplementations::GPU_BatchUnit_Fan)
     {
@@ -200,79 +294,81 @@ namespace BackwardPass
 {
   namespace FtrOP
   {
-    template <typename Float, typename Int, bool Transpose>
-    void call(ForwardImplementations strategy,
-              MatrixData<Float> features,
+    template <typename Float, typename Int>
+    void call(BackwardFtrImplementations strategy,
               MatrixData<Int> lookup,
               MatrixData<Float> weights,
-              std::optional<VectorData<Float>> biases,
-              MatrixData<Float> output)
+              MatrixData<Float> out_grad,
+              MatrixData<Float> feature_gradient)
     {
-      using OutT = ForwardData<Float, Int, Transpose>;
-      auto data = OutT::from_matrix(features, lookup, weights, biases, output);
+      using OutT = BackwardData<Float, Int>;
+      auto data = OutT::from_matrix(feature_gradient, lookup, weights, out_grad);
 
       int device;
       HIP_ASSERT(hipGetDevice(&device));
       hipDeviceProp_t properties;
       HIP_ASSERT(hipGetDeviceProperties(&properties, device));
-      // calculate how many threads (in multiples of warps) we get per multiprocessor if we distribute evenly
 
-      dim3 block_final = dim3{32, 16};
-      if (data.batchSize_ <= 4 || (9 <= data.batchSize_ && data.batchSize_ <= 12))
+      ihipStream_t *stream = nullptr;
+      auto err = hipMemsetAsync(data.feature_grad_ptr(), 0,
+                                (std::int64_t)data.inputSize_ * data.batchSize_ * sizeof(Float),
+                                stream);
+      dim3 block_final = dim3{16, 64};
+      sDim3d grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
+      sDim3d grid_final = {
+          div_up(grid.x, block_final.x),
+          div_up(grid.y, block_final.y),
+          div_up(grid.z, block_final.z)};
+      if (grid_final.y > 65'535)
       {
-        block_final = {4, 96};
+        grid_final.y = 65'535;
       }
-      else if (data.batchSize_ <= 8 || (17 <= data.batchSize_ && data.batchSize_ <= 24))
+      dim3 grid_to_use = dim3{grid_final.x, grid_final.y, grid_final.z};
+      if (strategy == BackwardFtrImplementations::GPU_BatchUnit_Fan)
       {
-        block_final = {8, 48};
-      }
-      else if (data.batchSize_ <= 16)
-      {
-        block_final = {16, 24};
-      }
-      sDim3d grid;
-      sDim3d grid_dim;
-      if (transpose)
-      {
-        grid = {(std::uint32_t)data.outputSize_, (std::uint32_t)data.batchSize_};
-        grid_dim = {
-            div_up(grid.x, block_final.y),
-            div_up(grid.y, block_final.x),
-            div_up(grid.z, block_final.z)};
-      }
-      else
-      {
-        grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
-        grid_dim = {
-            div_up(grid.x, block_final.x),
-            div_up(grid.y, block_final.y),
-            div_up(grid.z, block_final.z)};
-      }
-      if (grid_dim.y > 65'535)
-      {
-        grid_dim.y = 65'535;
-      }
-      dim3 grid_final = dim3{grid_dim.x, grid_dim.y, grid_dim.z};
-      // hipStream_t Stream = nullptr; //Check streams later
-      if (strategy == ForwardImplementations::GPU_BatchUnit_TG_Fan)
-      {
-        kernels::ffi_bu_tg_f<<<grid_final, block_final>>>(data);
-      }
-      else if (strategy == ForwardImplementations::GPU_BatchUnit_Fan)
-      {
-        for (std::int32_t unit_pos = 0; unit_pos < data.outputSize_; unit_pos += grid_final.y * block_final.y)
-        {
-          {
-            kernels::ffi_bu_f<<<grid_final, block_final>>>(data, unit_pos);
-            HIP_ASSERT(hipDeviceSynchronize());
-          }
-        }
+        kernels::ffi_bf_bu_f_vector<<<grid_to_use, block_final, 0, stream>>>(data);
+        HIP_ASSERT(hipDeviceSynchronize());
       }
     }
   }
   namespace WgtOP
   {
+    template <typename Float, typename Int>
+    void call(BackwardWgtImplementations strategy,
+              MatrixData<Float> features,
+              MatrixData<Int> lookup,
+              MatrixData<Float> out_grad,
+              MatrixData<Float> weight_gradient)
+    {
+      using OutT = BackwardData<Float, Int>;
+      auto data = OutT::from_matrix(features, lookup, out_grad, weight_gradient);
 
+      int device;
+      HIP_ASSERT(hipGetDevice(&device));
+      hipDeviceProp_t properties;
+      HIP_ASSERT(hipGetDeviceProperties(&properties, device));
+
+      ihipStream_t *stream = nullptr;
+      auto err = hipMemsetAsync(data.feature_grad_ptr(), 0,
+                                (std::int64_t)data.inputSize_ * data.batchSize_ * sizeof(Float),
+                                stream);
+      dim3 block_final = dim3{32, 32};
+      sDim3d grid = {(std::uint32_t)data.lookupSize_, (std::uint32_t)data.outputSize_};
+      sDim3d grid_final = {
+          div_up(grid.x, block_final.x),
+          div_up(grid.y, block_final.y),
+          div_up(grid.z, block_final.z)};
+      if (grid_final.y > 65'535)
+      {
+        grid_final.y = 65'535;
+      }
+      dim3 grid_to_use = dim3{grid_final.x, grid_final.y, grid_final.z};
+      if (strategy == BackwardWgtImplementations::GPU_FanUnit_Batch)
+      {
+        kernels::ffi_bf_fu_b_scalar<<<grid_to_use, block_final, 0, stream>>>(data);
+        HIP_ASSERT(hipDeviceSynchronize());
+      }
+    }
   }
 }
 
@@ -361,17 +457,17 @@ struct SparseBackwardOp
     Tensor weight_gradient = allocate_output(weights, weights.size(0), weights.size(1));
 
     BackwardPass::FtrOP::call(
-        strategy,
+        strategy_ftr,
         to_matrix<Int>(locations),
         to_matrix<Float>(weights),
         to_matrix<Float>(output_gradient),
         to_matrix<Float>(input_gradient));
-    // BackwardPass::WgtOP::call(
-    //     strategy,
-    //     to_matrix<Float>(input_gradient),
-    //     to_matrix<Int>(locations),
-    //     to_matrix<Float>(output_gradient),
-    //     to_matrix<Float>(weights));
+    BackwardPass::WgtOP::call(
+        strategy_wgt,
+        to_matrix<Float>(input_gradient),
+        to_matrix<Int>(locations),
+        to_matrix<Float>(output_gradient),
+        to_matrix<Float>(weights));
     return {input_gradient, weight_gradient};
   }
 
