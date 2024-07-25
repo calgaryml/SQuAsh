@@ -294,79 +294,81 @@ namespace BackwardPass
 {
   namespace FtrOP
   {
-    template <typename Float, typename Int, bool Transpose>
-    void call(ForwardImplementations strategy,
-              MatrixData<Float> features,
+    template <typename Float, typename Int>
+    void call(BackwardFtrImplementations strategy,
               MatrixData<Int> lookup,
               MatrixData<Float> weights,
-              std::optional<VectorData<Float>> biases,
-              MatrixData<Float> output)
+              MatrixData<Float> out_grad,
+              MatrixData<Float> feature_gradient)
     {
-      using OutT = ForwardData<Float, Int, Transpose>;
-      auto data = OutT::from_matrix(features, lookup, weights, biases, output);
+      using OutT = BackwardData<Float, Int>;
+      auto data = OutT::from_matrix(feature_gradient, lookup, weights, out_grad);
 
       int device;
       HIP_ASSERT(hipGetDevice(&device));
       hipDeviceProp_t properties;
       HIP_ASSERT(hipGetDeviceProperties(&properties, device));
-      // calculate how many threads (in multiples of warps) we get per multiprocessor if we distribute evenly
 
-      dim3 block_final = dim3{32, 16};
-      if (data.batchSize_ <= 4 || (9 <= data.batchSize_ && data.batchSize_ <= 12))
+      ihipStream_t *stream = nullptr;
+      auto err = hipMemsetAsync(data.feature_grad_ptr(), 0,
+                                (std::int64_t)data.inputSize_ * data.batchSize_ * sizeof(Float),
+                                stream);
+      dim3 block_final = dim3{16, 64};
+      sDim3d grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
+      sDim3d grid_final = {
+          div_up(grid.x, block_final.x),
+          div_up(grid.y, block_final.y),
+          div_up(grid.z, block_final.z)};
+      if (grid_final.y > 65'535)
       {
-        block_final = {4, 96};
+        grid_final.y = 65'535;
       }
-      else if (data.batchSize_ <= 8 || (17 <= data.batchSize_ && data.batchSize_ <= 24))
+      dim3 grid_to_use = dim3{grid_final.x, grid_final.y, grid_final.z};
+      if (strategy == BackwardFtrImplementations::GPU_BatchUnit_Fan)
       {
-        block_final = {8, 48};
-      }
-      else if (data.batchSize_ <= 16)
-      {
-        block_final = {16, 24};
-      }
-      sDim3d grid;
-      sDim3d grid_dim;
-      if (transpose)
-      {
-        grid = {(std::uint32_t)data.outputSize_, (std::uint32_t)data.batchSize_};
-        grid_dim = {
-            div_up(grid.x, block_final.y),
-            div_up(grid.y, block_final.x),
-            div_up(grid.z, block_final.z)};
-      }
-      else
-      {
-        grid = {(std::uint32_t)data.batchSize_, (std::uint32_t)data.outputSize_};
-        grid_dim = {
-            div_up(grid.x, block_final.x),
-            div_up(grid.y, block_final.y),
-            div_up(grid.z, block_final.z)};
-      }
-      if (grid_dim.y > 65'535)
-      {
-        grid_dim.y = 65'535;
-      }
-      dim3 grid_final = dim3{grid_dim.x, grid_dim.y, grid_dim.z};
-      // hipStream_t Stream = nullptr; //Check streams later
-      if (strategy == ForwardImplementations::GPU_BatchUnit_TG_Fan)
-      {
-        kernels::ffi_bu_tg_f<<<grid_final, block_final>>>(data);
-      }
-      else if (strategy == ForwardImplementations::GPU_BatchUnit_Fan)
-      {
-        for (std::int32_t unit_pos = 0; unit_pos < data.outputSize_; unit_pos += grid_final.y * block_final.y)
-        {
-          {
-            kernels::ffi_bu_f<<<grid_final, block_final>>>(data, unit_pos);
-            HIP_ASSERT(hipDeviceSynchronize());
-          }
-        }
+        kernels::ffi_bf_bu_f_vector<<<grid_to_use, block_final, 0, stream>>>(data);
+        HIP_ASSERT(hipDeviceSynchronize());
       }
     }
   }
   namespace WgtOP
   {
+    template <typename Float, typename Int>
+    void call(BackwardWgtImplementations strategy,
+              MatrixData<Float> features,
+              MatrixData<Int> lookup,
+              MatrixData<Float> out_grad,
+              MatrixData<Float> weight_gradient)
+    {
+      using OutT = BackwardData<Float, Int>;
+      auto data = OutT::from_matrix(features, lookup, out_grad, weight_gradient);
 
+      int device;
+      HIP_ASSERT(hipGetDevice(&device));
+      hipDeviceProp_t properties;
+      HIP_ASSERT(hipGetDeviceProperties(&properties, device));
+
+      ihipStream_t *stream = nullptr;
+      auto err = hipMemsetAsync(data.feature_grad_ptr(), 0,
+                                (std::int64_t)data.inputSize_ * data.batchSize_ * sizeof(Float),
+                                stream);
+      dim3 block_final = dim3{32, 32};
+      sDim3d grid = {(std::uint32_t)data.lookupSize_, (std::uint32_t)data.outputSize_};
+      sDim3d grid_final = {
+          div_up(grid.x, block_final.x),
+          div_up(grid.y, block_final.y),
+          div_up(grid.z, block_final.z)};
+      if (grid_final.y > 65'535)
+      {
+        grid_final.y = 65'535;
+      }
+      dim3 grid_to_use = dim3{grid_final.x, grid_final.y, grid_final.z};
+      if (strategy == BackwardWgtImplementations::GPU_FanUnit_Batch)
+      {
+        kernels::ffi_bf_fu_b_scalar<<<grid_to_use, block_final, 0, stream>>>(data);
+        HIP_ASSERT(hipDeviceSynchronize());
+      }
+    }
   }
 }
 
@@ -455,17 +457,17 @@ struct SparseBackwardOp
     Tensor weight_gradient = allocate_output(weights, weights.size(0), weights.size(1));
 
     BackwardPass::FtrOP::call(
-        strategy,
+        strategy_ftr,
         to_matrix<Int>(locations),
         to_matrix<Float>(weights),
         to_matrix<Float>(output_gradient),
         to_matrix<Float>(input_gradient));
-    // BackwardPass::WgtOP::call(
-    //     strategy,
-    //     to_matrix<Float>(input_gradient),
-    //     to_matrix<Int>(locations),
-    //     to_matrix<Float>(output_gradient),
-    //     to_matrix<Float>(weights));
+    BackwardPass::WgtOP::call(
+        strategy_wgt,
+        to_matrix<Float>(input_gradient),
+        to_matrix<Int>(locations),
+        to_matrix<Float>(output_gradient),
+        to_matrix<Float>(weights));
     return {input_gradient, weight_gradient};
   }
 
