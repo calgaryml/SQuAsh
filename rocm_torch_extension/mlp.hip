@@ -341,7 +341,7 @@ namespace BackwardPass
               MatrixData<Float> weight_gradient)
     {
       using OutT = BackwardData<Float, Int>;
-      auto data = OutT::from_matrix(features, lookup, out_grad, weight_gradient);
+      auto data = OutT::from_matrix(features, lookup, weight_gradient, out_grad);
 
       int device;
       HIP_ASSERT(hipGetDevice(&device));
@@ -464,10 +464,10 @@ struct SparseBackwardOp
         to_matrix<Float>(input_gradient));
     BackwardPass::WgtOP::call(
         strategy_wgt,
-        to_matrix<Float>(input_gradient),
+        to_matrix<Float>(features),
         to_matrix<Int>(locations),
         to_matrix<Float>(output_gradient),
-        to_matrix<Float>(weights));
+        to_matrix<Float>(weight_gradient));
     return {input_gradient, weight_gradient};
   }
 
