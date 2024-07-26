@@ -22,12 +22,11 @@ RUN pip install --upgrade pip && pip install sentencepiece protobuf \
 # Copy in project files required for building
 COPY ./ ./
 
-## Install submodules
-RUN pip install -e ./third-party/peft && pip install -e ./third-party/torchtune
-
 ## Submodules pull and build squash
 RUN git config --global --add safe.directory "*" && \
     git submodule init && \
     git submodule update && \
+    pip install -e ./third-party/peft && \
+    pip install -e ./third-party/torchtune && \
     pip install -e .
 

@@ -13,4 +13,4 @@ Check if amd GPU is renderD128 and renderD129 if you have 2 GPUs (or more), in m
 `docker run -it --device /dev/kfd --device /dev/dri/renderD128 -v $(pwd):/workspace squash`
 
 Usage steps: 
-1. Run `python3 trainer.py` in directory `rocm_torch_extension` to run the tests and see how to use the python module.
+1. Run `python3 ./squash/trainer.py` to run the tests and see how to use the python module.
