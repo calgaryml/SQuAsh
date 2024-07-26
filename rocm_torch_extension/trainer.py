@@ -12,8 +12,14 @@ import mlp_hip
 from torch.autograd import gradcheck
 
 import torch.nn.functional as F
+import torch.nn as nn
+import mlp_hip
+from torch.autograd import gradcheck
+
+import torch.nn.functional as F
 
 device = torch.device("cuda")
+torch.manual_seed(42)
 torch.manual_seed(42)
 print('Using device:', device)
 
@@ -24,8 +30,9 @@ seq_len = 12
 feature_size = 256
 output_size = 512
 fan_in = 24
-
-features = torch.randn(batch_size, seq_len, feature_size, dtype=torch.float32, requires_grad=True, device=device)
+bias = False
+transpose = True
+features = torch.randn(batch_size, feature_size, dtype=torch.float32, requires_grad=True, device=device)
 weights = torch.randn(output_size, fan_in, dtype=torch.float32, requires_grad=True, device=device)
 locations = torch.randint(0, feature_size, (output_size, fan_in), dtype=torch.int32, requires_grad=False,
                             device=device)

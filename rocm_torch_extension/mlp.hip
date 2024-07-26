@@ -4,6 +4,7 @@
 #include <type_traits>
 #include "forward_data.hpp"
 #include "backward_data.hpp"
+#include "backward_data.hpp"
 #include "enums.hpp"
 #include "generic_vector.hip"
 
@@ -60,6 +61,8 @@ struct ForwardKernelHelpers
 
   static __device__ accumulate_t loopFan(ForwardKernelData &data, std::int32_t batchIndex, std::int32_t unitIndex)
   {
+    assert(0 <= batchIndex < data.batchSize_);
+    assert(0 <= unitIndex < data.outputSize_);
     assert(0 <= batchIndex < data.batchSize_);
     assert(0 <= unitIndex < data.outputSize_);
 
@@ -494,5 +497,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
   m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+  m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
   m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
 }
