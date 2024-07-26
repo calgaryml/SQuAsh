@@ -180,7 +180,6 @@ struct BackwardKernelHelpers
     {
       return;
     }
-
     loop_batch_scalar(data, unit_index, weight_index);
   }
 };
