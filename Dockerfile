@@ -1,5 +1,8 @@
 FROM rocm/dev-ubuntu-22.04:6.0-complete
 
+WORKDIR /workspace
+
+## cmake + other atp deps
 RUN apt-get update && \
     apt-get install -y \
     git git-lfs \
@@ -9,9 +12,22 @@ RUN apt-get update && \
     && tar -xzf /tmp/cmake-3.29.6.tar.gz -C /tmp/ && cd /tmp/cmake-3.29.6-linux-x86_64/ \
     && cp bin/ share/ doc/ /usr/local/ -r && rm -rf /tmp/cmake-3.29.6*
 
-RUN python3 -m pip install sentencepiece
-RUN python3 -m pip install protobuf
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install einops lion_pytorch accelerate
-RUN python3 -m pip install -U "huggingface_hub[cli]"
-RUN python3 -m pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.0
+
+## Python deps
+RUN pip install --upgrade pip && pip install sentencepiece protobuf \
+    einops lion_pytorch accelerate huggingface_hub[cli] && \
+    pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.0
+
+
+# Copy in project files required for building
+COPY ./ ./
+
+## Install submodules
+RUN pip install -e ./third-party/peft && pip install -e ./third-party/torchtune
+
+## Submodules pull and build squash
+RUN git config --global --add safe.directory "*" && \
+    git submodule init && \
+    git submodule update && \
+    pip install -e .
+
