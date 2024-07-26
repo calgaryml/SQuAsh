@@ -4,7 +4,6 @@
 #include <type_traits>
 #include "forward_data.hpp"
 #include "backward_data.hpp"
-#include "backward_data.hpp"
 #include "enums.hpp"
 #include "generic_vector.hip"
 
@@ -61,8 +60,6 @@ struct ForwardKernelHelpers
 
   static __device__ accumulate_t loopFan(ForwardKernelData &data, std::int32_t batchIndex, std::int32_t unitIndex)
   {
-    assert(0 <= batchIndex < data.batchSize_);
-    assert(0 <= unitIndex < data.outputSize_);
     assert(0 <= batchIndex < data.batchSize_);
     assert(0 <= unitIndex < data.outputSize_);
 
@@ -183,7 +180,6 @@ struct BackwardKernelHelpers
     {
       return;
     }
-
     loop_batch_scalar(data, unit_index, weight_index);
   }
 };
