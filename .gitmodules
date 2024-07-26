@@ -3,7 +3,11 @@
 	url = https://github.com/kokkos/mdspan.git
 [submodule "third-party/torchtune"]
 	path = third-party/torchtune
-	url = git@github.com:pytorch/torchtune.git
+	url = https://github.com/pytorch/torchtune.git
 [submodule "third-party/peft"]
 	path = third-party/peft
-	url = git@github.com:huggingface/peft.git
+	url = https://github.com/huggingface/peft.git
+[submodule "third-party/bitsandbytes"]
+	path = third-party/bitsandbytes
+	url = https://github.com/bitsandbytes-foundation/bitsandbytes.git
+	branch = multi-backend-refactor
