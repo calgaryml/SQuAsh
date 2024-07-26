@@ -1,6 +1,5 @@
 from __future__ import division
 from __future__ import print_function
-
 import argparse
 import math
 import time
@@ -29,8 +28,7 @@ features = torch.randn(batch_size, seq_len, feature_size, dtype=torch.float32, r
 weights = torch.randn(output_size, fan_in, dtype=torch.float32, requires_grad=True, device=device)
 locations = torch.randint(0, feature_size, (output_size, fan_in), dtype=torch.int32, requires_grad=False,
                             device=device)
-
-transpose = False
+transpose = True
 
 # do the multiplication jointly
 all_results = FFI.ffi_mul(features, weights, locations, None, transpose)
@@ -41,10 +39,8 @@ torch.set_printoptions(threshold=100_000)
 # and compare result with slices
 one_result = FFI.ffi_mul(features[:, 5, :], weights, locations, None, transpose)
 assert (all_results[:, 5, :] == one_result).all()
-
 one_result = FFI.ffi_mul(features[8, :, :], weights, locations, None, transpose)
 assert (all_results[8, :, :] == one_result).all()
-
 # Test int16 and int32 indicies give the same result
 locations = torch.randint(0, feature_size, (output_size, fan_in), dtype=torch.int16, requires_grad=False,
                             device=device)
