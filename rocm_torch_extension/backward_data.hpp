@@ -62,7 +62,7 @@ public:
         return looked_up;
     }
 
-    __device__ const Float &weight_at(std::int32_t unit, std::int32_t index) const
+    __device__ Float &weight_at(std::int32_t unit, std::int32_t index) const
     {
         return weights_[unit * lookupSize_ + index];
     }
