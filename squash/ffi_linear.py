@@ -47,7 +47,7 @@ class FFILinear(nn.Module):
                 requires_grad=False,
             )
 
-            if hasattr(module, "bias"):
+            if hasattr(module, "bias") and module.bias is not None:
                 self.bias = nn.Parameter(
                     torch.clone(
                         module.bias[active_neuron_idx].detach().type(dtype)
