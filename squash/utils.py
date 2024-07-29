@@ -35,3 +35,13 @@ def assert_ffi(t: torch.Tensor):
 
 def print_sparsity(t: torch.Tensor):
     return f"{(t==0).sum()/t.numel():.2f}"
+
+@torch.no_grad()
+def ffi_magnitude_pruner(t: torch.Tensor, sparsity: float) -> nn.Linear:
+    t = t.clone()
+    n_zeros = int(t.numel() * (sparsity))
+    n_zeros_per_neuron = n_zeros // t.shape[0]
+    for n_idx, neuron in enumerate(t):
+        _, w_idx = torch.sort(neuron, descending=True)
+        t[n_idx, w_idx[:n_zeros_per_neuron-1]] = 0
+    return t
