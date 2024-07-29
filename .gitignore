@@ -9,6 +9,7 @@ dist
 build
 __pycache__
 *.so
+*.pkl
 
 ## hipified sources
 *_hip.hip
