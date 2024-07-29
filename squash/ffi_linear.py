@@ -23,8 +23,8 @@ class FFILinear(nn.Module):
             fine_grained_idx = (module.weight[active_neuron_idx] != 0).to(
                 torch.bool
             )
-            _, self.input_mask = fine_grained_idx.nonzero(as_tuple=True)
-            self.input_mask = self.input_mask.reshape(
+            _, input_mask = fine_grained_idx.nonzero(as_tuple=True)
+            input_mask = input_mask.reshape(
                 shape=(module.weight[active_neuron_idx].shape[0], -1)
             ).to(index_dtype)
             weight = module.weight[active_neuron_idx].detach().type(dtype)
@@ -37,9 +37,9 @@ class FFILinear(nn.Module):
             # padding to multiple of 4
             if vectorize:
                 pad = (
-                    self.input_mask.shape[1] + 3
-                ) // 4 * 4 - self.input_mask.shape[1]
-                self.input_mask = F.pad(self.input_mask, [0, pad])
+                    input_mask.shape[1] + 3
+                ) // 4 * 4 - input_mask.shape[1]
+                input_mask = F.pad(input_mask, [0, pad])
                 weight = F.pad(weight, [0, pad])
 
             self.condensed_weight = nn.Parameter(
@@ -56,6 +56,7 @@ class FFILinear(nn.Module):
                 )
             else:
                 self.register_parameter("bias", None)
+            self.register_buffer("input_mask", input_mask)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return FFI.ffi_mul(

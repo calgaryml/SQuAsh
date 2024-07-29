@@ -489,9 +489,21 @@ struct SparseBackwardOp
   }
 };
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
-{
+// PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
+// {
+//   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+//   m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+//   m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+// }
+
+TORCH_LIBRARY(mlp_hip, m){
   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
   m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
   m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+}
+
+TORCH_LIBRARY_IMPL(mlp_hip, CUDA, m) {
+  m.impl("ffi_forward", &SparseForwardOp<float, false>::dispatch);
+  m.impl("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch);
+  m.impl("ffi_backward_tp", &SparseBackwardOp<float>::dispatch);
 }
