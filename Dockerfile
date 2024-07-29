@@ -31,7 +31,6 @@ RUN git config --global --add safe.directory "*" && \
     cmake -DCOMPUTE_BACKEND=hip -S ./third-party/bitsandbytes && \
     make ./third-party/bitsandbytes && \
     pip install -e ./third-party/bitsandbytes && \
-    pip install -e ./third-party/sparsimony && \
     pip install -e .
 
 
