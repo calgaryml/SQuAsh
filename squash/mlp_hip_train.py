@@ -3,8 +3,11 @@ from typing import Any, Optional
 from torch import nn
 from torch.autograd import Function
 import torch
-
-import mlp_hip
+import pathlib
+module_path = pathlib.Path(__file__).resolve().parent
+library_path = module_path.parent/"build/lib.linux-x86_64-cpython-310/mlp_hip.cpython-310-x86_64-linux-gnu.so"
+torch.ops.load_library(library_path)
+mlp_hip = torch.ops.mlp_hip
 
 class FFIMulFunction(torch.autograd.Function):
     # noinspection PyMethodOverriding

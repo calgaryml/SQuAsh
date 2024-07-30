@@ -67,11 +67,6 @@ def get_sparse_model(dense_model, sparsity, dtype):
     return sparse_model
 
 
-@torch.library.register_fake("mlp_hip::ffi_forward_tp")
-def _(features_tp, weights, locations, bias):
-    pass
-    # return torch.empty_like()
-
 if __name__ == "__main__":
     dynamo.config.verbose = True
     compiler_kwargs = {

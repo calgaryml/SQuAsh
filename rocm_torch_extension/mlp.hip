@@ -50,6 +50,33 @@ constexpr inline T round_up(T value, T divisor)
   return div_up(value, divisor) * divisor;
 }
 
+template <bool Transpose>
+struct FFIMeta
+{
+  static Tensor forward(
+      const Tensor &features,
+      const Tensor &weights,
+      const Tensor &locations,
+      const OptTensor &bias_opt)
+  {
+    std::int64_t batch_size = Transpose ? features.size(1) : features.size(0);
+    std::int64_t output_size = weights.size(0);
+    return allocate_output(features, batch_size, output_size);
+  }
+
+  static std::vector<Tensor> backward(
+      const Tensor &features,
+      const Tensor &weights,
+      const Tensor &locations,
+      const Tensor &output_gradient)
+  {
+
+    Tensor input_gradient = allocate_output(features, features.size(0), features.size(1));
+    Tensor weight_gradient = allocate_output(weights, weights.size(0), weights.size(1));
+    return {input_gradient, weight_gradient};
+  }
+};
+
 template <typename Float, typename Int, bool Transpose>
 struct ForwardKernelHelpers
 {
@@ -489,21 +516,23 @@ struct SparseBackwardOp
   }
 };
 
-// PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
-// {
-//   m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-//   m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-//   m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-// }
-
-TORCH_LIBRARY(mlp_hip, m){
-  m.def("ffi_forward", &SparseForwardOp<float, false>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-  m.def("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
-  m.def("ffi_backward_tp", &SparseBackwardOp<float>::dispatch, "Performs a fixed fan-in batched matrix multiplication.");
+TORCH_LIBRARY(mlp_hip, m)
+{
+  m.def("ffi_forward(Tensor features, Tensor weights, Tensor locations, Tensor? bias) -> Tensor");
+  m.def("ffi_forward_tp(Tensor features, Tensor weights, Tensor locations, Tensor? bias) -> Tensor");
+  m.def("ffi_backward_tp(Tensor features, Tensor weights, Tensor locations, Tensor out_grad) -> Tensor[]");
 }
 
-TORCH_LIBRARY_IMPL(mlp_hip, CUDA, m) {
+TORCH_LIBRARY_IMPL(mlp_hip, CUDA, m)
+{
   m.impl("ffi_forward", &SparseForwardOp<float, false>::dispatch);
   m.impl("ffi_forward_tp", &SparseForwardOp<float, true>::dispatch);
   m.impl("ffi_backward_tp", &SparseBackwardOp<float>::dispatch);
+}
+
+TORCH_LIBRARY_IMPL(mlp_hip, Meta, m)
+{
+  m.impl("ffi_forward", &FFIMeta<false>::forward);
+  m.impl("ffi_forward_tp", &FFIMeta<true>::forward);
+  m.impl("ffi_backward_tp", &FFIMeta<true>::backward);
 }
