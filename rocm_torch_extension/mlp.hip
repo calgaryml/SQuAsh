@@ -530,9 +530,9 @@ TORCH_LIBRARY_IMPL(mlp_hip, CUDA, m)
   m.impl("ffi_backward_tp", &SparseBackwardOp<float>::dispatch);
 }
 
-TORCH_LIBRARY_IMPL(mlp_hip, Meta, m)
-{
-  m.impl("ffi_forward", &FFIMeta<false>::forward);
-  m.impl("ffi_forward_tp", &FFIMeta<true>::forward);
-  m.impl("ffi_backward_tp", &FFIMeta<true>::backward);
-}
+// TORCH_LIBRARY_IMPL(mlp_hip, Meta, m)
+// {
+//   m.impl("ffi_forward", &FFIMeta<false>::forward);
+//   m.impl("ffi_forward_tp", &FFIMeta<true>::forward);
+//   m.impl("ffi_backward_tp", &FFIMeta<true>::backward);
+// }

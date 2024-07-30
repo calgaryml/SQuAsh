@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "*.html": "html",
+        "*.py.example": "python",
+        "*.cu": "cpp",
+        "*.hip": "cpp",
+        "*.hpp": "cpp",
+        "array": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "span": "cpp",
+        "utility": "cpp"
+    }
+}
