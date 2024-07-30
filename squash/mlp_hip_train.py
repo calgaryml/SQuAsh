@@ -4,10 +4,15 @@ from torch import nn
 from torch.autograd import Function
 import torch
 import pathlib
+from torch import _C
 module_path = pathlib.Path(__file__).resolve().parent
-library_path = module_path.parent/"build/lib.linux-x86_64-cpython-310/mlp_hip.cpython-310-x86_64-linux-gnu.so"
+# library_path = module_path.parent/"build/lib.linux-x86_64-cpython-310/mlp_hip.cpython-310-x86_64-linux-gnu.so"
+library_path = module_path.parent/"build/lib.linux-x86_64-3.10/mlp_hip.cpython-310-x86_64-linux-gnu.so"
 torch.ops.load_library(library_path)
 mlp_hip = torch.ops.mlp_hip
+
+# torch.library.register_autograd(
+#     "mlp_hip::ffi_forward_tp", _backward, setup_context=_setup_context)
 
 class FFIMulFunction(torch.autograd.Function):
     # noinspection PyMethodOverriding
@@ -58,11 +63,12 @@ class FFIMulFunction(torch.autograd.Function):
 
 
 class FFI:
+    # @torch.library.custom_op("mlp_hip::ffi_forward_tp", mutates_args=())
     def ffi_mul(features: torch.Tensor,
                 weights: torch.Tensor,
                 locations: torch.Tensor,
                 bias: Optional[torch.Tensor], 
-                transpose: bool = True):
+                transpose: bool = True)-> torch.Tensor:
         """
     Performs a fixed fan-in batched matrix multiplication.
     Multiplies `features` with the fixed fan-in sparse matrix described by `weights` and `locations`, possibly
@@ -82,3 +88,12 @@ class FFI:
             return result.view(original_shape + (locations.shape[0],))
         else:
             return FFIMulFunction.apply(features, weights, locations, bias, transpose)
+
+    @torch.library.register_fake("mlp_hip::ffi_forward_tp")
+    def _(
+        features: torch.Tensor,
+        weights: torch.Tensor,
+        locations: torch.Tensor,
+        bias: Optional[torch.Tensor],
+        )-> torch.Tensor:
+        return torch.empty(size=(features.shape[1], weights.shape[0]), device=torch.device("cuda"))
