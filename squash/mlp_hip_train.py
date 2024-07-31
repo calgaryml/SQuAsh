@@ -1,3 +1,12 @@
+# Copyright (c) 2023-2024, Aalto University, developed by Erik Schultheis
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Copyright (c) 2024, University of Calgary, developed by Mike Lasby & Mohamed Yassin
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
 import math
 from typing import Any, Optional
 from torch import nn
@@ -17,6 +26,7 @@ mlp_hip = torch.ops.mlp_hip
 class FFIMulFunction(torch.autograd.Function):
     # noinspection PyMethodOverriding
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(ctx: Any,
                 features: torch.Tensor,
                 weights: torch.Tensor,
@@ -43,6 +53,7 @@ class FFIMulFunction(torch.autograd.Function):
 
     # noinspection PyMethodOverriding
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, grad_output):
         features, weights, locations, = ctx.saved_tensors
         transpose = ctx.transpose
@@ -89,11 +100,11 @@ class FFI:
         else:
             return FFIMulFunction.apply(features, weights, locations, bias, transpose)
 
-    @torch.library.register_fake("mlp_hip::ffi_forward_tp")
-    def _(
-        features: torch.Tensor,
-        weights: torch.Tensor,
-        locations: torch.Tensor,
-        bias: Optional[torch.Tensor],
-        )-> torch.Tensor:
-        return torch.empty(size=(features.shape[1], weights.shape[0]), device=torch.device("cuda"))
+    # @torch.library.register_fake("mlp_hip::ffi_forward_tp")
+    # def _(
+    #     features: torch.Tensor,
+    #     weights: torch.Tensor,
+    #     locations: torch.Tensor,
+    #     bias: Optional[torch.Tensor],
+    #     )-> torch.Tensor:
+    #     return torch.empty(size=(features.shape[1], weights.shape[0]), device=torch.device("cuda"))

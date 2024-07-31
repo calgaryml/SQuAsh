@@ -45,7 +45,7 @@ class FFILinear(nn.Module):
             self.condensed_weight = nn.Parameter(
                 weight,
                 requires_grad=False,
-            ).contigious()
+            ).contiguous()
 
             if hasattr(module, "bias") and module.bias is not None:
                 self.bias = nn.Parameter(
@@ -56,7 +56,7 @@ class FFILinear(nn.Module):
                 )
             else:
                 self.register_parameter("bias", None)
-            self.register_buffer("input_mask", input_mask.contigious())
+            self.register_buffer("input_mask", input_mask.contiguous())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return FFI.ffi_mul(

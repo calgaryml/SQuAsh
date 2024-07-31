@@ -1,3 +1,13 @@
+// Copyright (c) 2023-2024, Aalto University, developed by Erik Schultheis
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
+// Copyright (c) 2024, University of Calgary, developed by Mike Lasby & Mohamed Yassin
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
 #include <torch/extension.h>
 #include <vector>
 #include <hip/hip_runtime.h>
