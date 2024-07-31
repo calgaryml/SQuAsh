@@ -1,3 +1,13 @@
+# Copyright (c) 2023-2024, Aalto University, developed by Erik Schultheis
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Copyright (c) 2024, University of Calgary, developed by Mike Lasby & Mohamed Yassin
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+
 from __future__ import division
 from __future__ import print_function
 
@@ -62,22 +72,8 @@ def main():
     dense_out = sparse(features)
     sparse_out = ffi_linear(features)
     assert torch.allclose(dense_out, sparse_out, atol=1e-7)
-    
-    ## backwards
-    # batch_size = 36
-    # seq_len = 12
-    # feature_size = 256
-    # output_size = 512
-    # fan_in = 24
 
-    # features = torch.randn(batch_size, seq_len, feature_size, dtype=torch.float32, requires_grad=True, device=device)
-    # weights = torch.randn(output_size, fan_in, dtype=torch.float32, requires_grad=True, device=device)
-    # locations = torch.randint(0, feature_size, (output_size, fan_in), dtype=torch.int32, requires_grad=False,
-    #                             device=device)
-    # out_grad = torch.randn(batch_size, output_size, dtype=torch.float32, requires_grad=True, device=device)
-    # mlp_hip.ffi_backward_tp(features, weights, locations, out_grad)
-
-
+    # grad check
     batch_size = 36
     seq_len = 12
     feature_size = 256
@@ -93,9 +89,6 @@ def main():
         bias = torch.randn(output_size, dtype=torch.float32, requires_grad=True, device=device)
     else:
         bias = None
-    # TODO what should be the tolerances here?
-    # TODO for some reason, fast mode passes, but slow mode doesn't
-    # TODO implement double kernels for these checks.
     test = gradcheck(FFI.ffi_mul, (features, weights, locations, bias, transpose), eps=1e-4, atol=1e-5, rtol=1e-3,
                         fast_mode=True, nondet_tol=1e-5)
         

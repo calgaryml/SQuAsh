@@ -1,3 +1,13 @@
+// Copyright (c) 2023-2024, Aalto University, developed by Erik Schultheis
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
+// Copyright (c) 2024, University of Calgary, developed by Mike Lasby & Mohamed Yassin
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
 #pragma once
 #include <cstring>
 
@@ -50,13 +60,6 @@ public:
 private:
     explicit __host__ __device__ GenericVector(const ElementType *address)
     {
-        // copy data from memory to local storage. contrary to reinterpret_cast,
-        // std::memcpy does not introduce undefined behaviour, and with the alignment
-        // hint, any decent compiler will elide this memcpy and just move data directly
-        // to registers.
-        // The alignment hint is crucial, otherwise we do get a sequence of individual bytes
-        // being loaded.
-        // std::memcpy(values, __builtin_assume_aligned(address, bytes), bytes);
         if constexpr (bytes % sizeof(int4) == 0)
         {
             const int4 *read_address = reinterpret_cast<const int4 *>(address);

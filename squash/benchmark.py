@@ -90,7 +90,7 @@ if __name__ == "__main__":
     batch_size = 32
     seq_len = 512
     results = []
-    # model = OPTForCausalLM.from_pretrained("facebook/opt-350m", torch_dtype=_DTYPE)
+    #model = OPTForCausalLM.from_pretrained("facebook/opt-350m", torch_dtype=_DTYPE)
     model = OPTModel.from_pretrained("facebook/opt-350m", torch_dtype=_DTYPE)
     sparse_model = get_sparse_model(model, sparsity, _DTYPE)
     tokenizer = GPT2Tokenizer.from_pretrained("facebook/opt-350m")
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     model.eval().to(device)
     sparse_model.eval().to(device)
     compiled_dense = torch.compile(model, backend="inductor", **compiler_kwargs)  
-    compiled_sparse = torch.compile(sparse_model, backend="inductor", **compiler_kwargs)  
+    #compiled_sparse = torch.compile(sparse_model, backend="inductor", **compiler_kwargs)  
 
     for batch_size in batch_sizes:
         print(f"Benchmarking batch size == {batch_size}")
@@ -111,7 +111,7 @@ if __name__ == "__main__":
         results.append(benchmark_model(model, model_inputs, f"Batch_size={batch_size}", "dense"))
         results.append(benchmark_model(compiled_dense, model_inputs, f"Batch_size={batch_size}", "dense_compiled"))
         results.append(benchmark_model(sparse_model, model_inputs, f"Batch_size={batch_size}", "sparse"))
-        results.append(benchmark_model(compiled_sparse, model_inputs, f"Batch_size={batch_size}", "sparse_compiled"))
+        #results.append(benchmark_model(compiled_sparse, model_inputs, f"Batch_size={batch_size}", "sparse_compiled"))
     compare = benchmark.Compare(results)
     compare.colorize()
     print(compare)

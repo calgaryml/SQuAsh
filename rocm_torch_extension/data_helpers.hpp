@@ -1,19 +1,20 @@
+// Copyright (c) 2023-2024, Aalto University, developed by Erik Schultheis
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
+// Copyright (c) 2024, University of Calgary, developed by Mike Lasby & Mohamed Yassin
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+
 #pragma once
 using torch::Tensor;
 using OptTensor = torch::optional<Tensor>;
-/*!
- * \brief Type used to represent vector data passed from/to kernels.
- * \details A (non-owning) `std::experimental::mdspan` for one-dimensional data.
- * \sa \ref design-mdspan
- */
+
 template <typename T>
 using VectorData = Kokkos::mdspan<T, Kokkos::dextents<std::int64_t, 1>, Kokkos::layout_right>;
 
-/*!
- * \brief Type used to represent matrix data passed from/to kernels.
- * \details A (non-owning) `std::experimental::mdspan` for two-dimensional data.
- * \sa \ref design-mdspan
- */
 template <typename T>
 using MatrixData = Kokkos::mdspan<T, Kokkos::dextents<std::int64_t, 2>, Kokkos::layout_right>;
 
