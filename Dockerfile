@@ -32,5 +32,3 @@ RUN git config --global --add safe.directory "*" && \
     make ./third-party/bitsandbytes && \
     pip install -e ./third-party/bitsandbytes && \
     pip install -e .
-
-
