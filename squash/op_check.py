@@ -23,9 +23,7 @@ class TestOps(unittest.TestCase):
     def test_ffi_mul(self):
         features, weights, locations = sample_inputs()
         if features.ndim > 2:
-            original_shape = features.shape[:-1]
             features = features.view(-1, features.shape[-1])
-        transpose=True
         opcheck(torch.ops.mlp_hip.ffi_forward_tp, (features, weights, locations, None))
 
 if __name__ == "__main__":

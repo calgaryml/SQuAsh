@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 import torch.utils.benchmark as benchmark
 from torch import _dynamo as dynamo
-from torch import _C
 from functools import reduce
 from copy import deepcopy
-from transformers import OPTForCausalLM, GPT2Tokenizer, OPTModel
+from transformers import GPT2Tokenizer, OPTModel
 import pathlib
 import pickle
 import argparse
@@ -18,24 +17,7 @@ def patch_model(model: nn.Module, dense_to_sparse_dict: dict[str, nn.Module]) ->
         setattr(reduce(getattr, dense_name.split(".")[:-1], model), dense_name.split(".")[-1], sparse_mod)
 
 @torch.no_grad()
-def benchmark_causal_model(model, model_inputs, sub_label: str, description: str):
-    for _ in range(2):
-        _  = model.generate(**model_inputs, max_new_tokens=1, do_sample=False)
-    result = benchmark.Timer(
-        stmt="model.generate(**model_inputs, max_new_tokens=1, do_sample=False)",
-        setup="",
-        globals={"model": model, "model_inputs": model_inputs},
-        label="OPT-350M Test",
-        sub_label=sub_label,
-        description=description,
-    ).blocked_autorange(min_run_time=__MIN_RUN_TIME)
-    return result
-
-
-@torch.no_grad()
 def benchmark_model(model, model_inputs, sub_label: str, description: str):
-    # for _ in range(2):
-    #     _  = model(**model_inputs)
     result = benchmark.Timer(
         stmt="model(**model_inputs)",
         setup="",
