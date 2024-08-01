@@ -1,6 +1,6 @@
 This repo is a work in progress. Fixed fan-in HIP kernels have been implemented but require further tuning as you can see below:
 
-![Benchmarks on AMD Radeon PRO W7900](scripts/benchmark_results.png)
+![Benchmarks on AMD Radeon PRO W7900](./notebooks/benchmark_results.png)
 
 ### Getting started 
 - `./rocm_torch_extension` - includes HIP kernels for fixed fan-in kernels. 
